@@ -1,213 +1,206 @@
-#include <Arduino.h>
-#include "esp_camera.h"
+/**********************************************************
+   Blynk + ESP32 Multi Sensor Monitor
+   Sensors:
+   - MQ135 Gas Sensor
+   - HX711 Load Cell
+   - BMP280 Temperature & Pressure
+   - DHT11 Temperature & Humidity
+   - GPS (NEO-6M / NEO-M8N)
+**********************************************************/
+
+#define BLYNK_TEMPLATE_ID "TMPL67DhRK1TF"
+#define BLYNK_TEMPLATE_NAME "ESP32 Sensor Monitor"
+#define BLYNK_AUTH_TOKEN "MeXBszbLx4w89eIaPmZaLe0z3RgVumbB"
+
 #include <WiFi.h>
+#include <BlynkSimpleEsp32.h>
+
 #include <Wire.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BMP280.h>
 
-// ===========================
-// Select camera model in board_config.h
-// ===========================
-#include "board_config.h"
+#include "HX711.h"
+#include <DHT.h>
 
-// ===========================
-// OLED Configuration (I2C)
-// ===========================
-#define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 64
-#define OLED_RESET    -1
-#define SCREEN_ADDRESS 0x3C  // Common I2C address for SSD1306 (0x3C or 0x3D)
+#include <TinyGPS++.h>
 
-#define I2C_SDA 15  // Custom SDA pin for ESP32-CAM
-#define I2C_SCL 14  // Custom SCL pin for ESP32-CAM
+//===================== WiFi =====================
+char ssid[] = "YOUR_WIFI_NAME";
+char pass[] = "YOUR_WIFI_PASSWORD";
 
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+//===================== MQ135 ====================
+#define MQ135_PIN 35
 
-// ===========================
-// Enter your WiFi credentials
-// ===========================
-const char *ssid = "Dilitha Rajapaksha’s iPhone";
-const char *password = "********";
+//===================== HX711 ====================
+#define HX_DOUT 18
+#define HX_SCK 19
 
-void startCameraServer();
-void setupLedFlash();
+//===================== DHT11 ====================
+#define DHTPIN 4
+#define DHTTYPE DHT11
 
-// Helper to display sensor and connection details on OLED
-void updateOledDisplay(sensor_t *s, camera_config_t &config, bool wifiConnected) {
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0, 0);
+//===================== GPS ======================
+#define GPS_RX 16   // ESP32 RX2
+#define GPS_TX 17   // ESP32 TX2
 
-  display.println("--- CAM & SENSOR ---");
+HardwareSerial GPSSerial(2);
+TinyGPSPlus gps;
 
-  // Sensor PID
-  display.printf("PID: 0x%04X\n", s->id.PID);
+//===================== Objects ==================
+HX711 scale;
+Adafruit_BMP280 bmp;
+DHT dht(DHTPIN, DHTTYPE);
 
-  // Resolution output
-  display.print("Res: ");
-  switch (config.frame_size) {
-    case FRAMESIZE_UXGA:    display.println("UXGA (1600x1200)"); break;
-    case FRAMESIZE_SVGA:    display.println("SVGA (800x600)");   break;
-    case FRAMESIZE_QVGA:    display.println("QVGA (320x240)");   break;
-    case FRAMESIZE_240X240: display.println("240x240");         break;
-    default:                display.println("Custom/Other");    break;
+BlynkTimer timer;
+
+// HX711 calibration factor
+float calibration_factor = -7050;
+
+//================================================
+
+void sendData()
+{
+  //---------------- MQ135 ----------------
+  int gasValue = analogRead(MQ135_PIN);
+
+  //---------------- HX711 ----------------
+  float weight = scale.get_units(10);
+
+  //---------------- BMP280 ---------------
+  float bmpTemperature = bmp.readTemperature();
+  float pressure = bmp.readPressure() / 100.0F;
+
+  //---------------- DHT11 ----------------
+  float humidity = dht.readHumidity();
+  float dhtTemperature = dht.readTemperature();
+
+  Serial.println("--------------------------------");
+
+  // MQ135
+  Serial.print("Gas Value: ");
+  Serial.println(gasValue);
+
+  // Weight
+  Serial.print("Weight: ");
+  Serial.print(weight);
+  Serial.println(" g");
+
+  // BMP280
+  Serial.print("BMP Temperature: ");
+  Serial.print(bmpTemperature);
+  Serial.println(" C");
+
+  Serial.print("Pressure: ");
+  Serial.print(pressure);
+  Serial.println(" hPa");
+
+  // DHT11
+  if (isnan(humidity) || isnan(dhtTemperature))
+  {
+    Serial.println("DHT11 Read Failed");
+  }
+  else
+  {
+    Serial.print("DHT Temperature: ");
+    Serial.print(dhtTemperature);
+    Serial.println(" C");
+
+    Serial.print("Humidity: ");
+    Serial.print(humidity);
+    Serial.println(" %");
+
+    Blynk.virtualWrite(V4, dhtTemperature);
+    Blynk.virtualWrite(V5, humidity);
   }
 
-  // Format
-  display.print("Format: ");
-  if (config.pixel_format == PIXFORMAT_JPEG) {
-    display.println("JPEG");
-  } else if (config.pixel_format == PIXFORMAT_RGB565) {
-    display.println("RGB565");
-  } else {
-    display.println("RAW/Other");
+  // Send existing sensors
+  Blynk.virtualWrite(V0, gasValue);
+  Blynk.virtualWrite(V1, weight);
+  Blynk.virtualWrite(V2, bmpTemperature);
+  Blynk.virtualWrite(V3, pressure);
+
+  //---------------- GPS ----------------
+  if (gps.location.isValid())
+  {
+    Serial.println("GPS Data");
+
+    Serial.print("Latitude : ");
+    Serial.println(gps.location.lat(), 6);
+
+    Serial.print("Longitude: ");
+    Serial.println(gps.location.lng(), 6);
+
+    Serial.print("Speed    : ");
+    Serial.print(gps.speed.kmph());
+    Serial.println(" km/h");
+
+    Serial.print("Altitude : ");
+    Serial.print(gps.altitude.meters());
+    Serial.println(" m");
+
+    Serial.print("Satellites: ");
+    Serial.println(gps.satellites.value());
+
+    // Send to Blynk
+    Blynk.virtualWrite(V6, gps.location.lat());
+    Blynk.virtualWrite(V7, gps.location.lng());
+    Blynk.virtualWrite(V8, gps.speed.kmph());
+    Blynk.virtualWrite(V9, gps.altitude.meters());
+    Blynk.virtualWrite(V10, gps.satellites.value());
   }
-
-  // PSRAM vs DRAM location
-  display.print("FB Loc: ");
-  display.println(config.fb_location == CAMERA_FB_IN_PSRAM ? "PSRAM" : "DRAM");
-
-  // WiFi Status
-  display.println("--------------------");
-  if (wifiConnected) {
-    display.print("IP: ");
-    display.println(WiFi.localIP());
-  } else {
-    display.println("WiFi: Connecting...");
+  else
+  {
+    Serial.println("Waiting for GPS Fix...");
   }
-
-  display.display();
 }
 
-void setup() {
+//================================================
+
+void setup()
+{
   Serial.begin(115200);
-  Serial.setDebugOutput(true);
-  Serial.println();
 
-  // Initialize I2C on GPIO 15 (SDA) and GPIO 14 (SCL)
-  Wire.begin(I2C_SDA, I2C_SCL);
+  // Connect WiFi & Blynk
+  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
 
-  // Initialize OLED Display
-  if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-    Serial.println(F("SSD1306 OLED allocation failed"));
-  } else {
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setTextColor(SSD1306_WHITE);
-    display.setCursor(0, 0);
-    display.println("Initializing...");
-    display.display();
+  // I2C
+  Wire.begin(21, 22);
+
+  // BMP280
+  if (!bmp.begin(0x76))
+  {
+    Serial.println("BMP280 not found!");
+    while (1);
   }
 
-  camera_config_t config;
-  config.ledc_channel = LEDC_CHANNEL_0;
-  config.ledc_timer = LEDC_TIMER_0;
-  config.pin_d0 = Y2_GPIO_NUM;
-  config.pin_d1 = Y3_GPIO_NUM;
-  config.pin_d2 = Y4_GPIO_NUM;
-  config.pin_d3 = Y5_GPIO_NUM;
-  config.pin_d4 = Y6_GPIO_NUM;
-  config.pin_d5 = Y7_GPIO_NUM;
-  config.pin_d6 = Y8_GPIO_NUM;
-  config.pin_d7 = Y9_GPIO_NUM;
-  config.pin_xclk = XCLK_GPIO_NUM;
-  config.pin_pclk = PCLK_GPIO_NUM;
-  config.pin_vsync = VSYNC_GPIO_NUM;
-  config.pin_href = HREF_GPIO_NUM;
-  config.pin_sccb_sda = SIOD_GPIO_NUM;
-  config.pin_sccb_scl = SIOC_GPIO_NUM;
-  config.pin_pwdn = PWDN_GPIO_NUM;
-  config.pin_reset = RESET_GPIO_NUM;
-  config.xclk_freq_hz = 20000000;
-  config.frame_size = FRAMESIZE_UXGA;
-  //config.pixel_format = PIXFORMAT_JPEG;  // for streaming
-  config.pixel_format = PIXFORMAT_RGB565; // for face detection/recognition
-  config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
-  config.fb_location = CAMERA_FB_IN_PSRAM;
-  config.jpeg_quality = 12;
-  config.fb_count = 1;
+  // HX711
+  scale.begin(HX_DOUT, HX_SCK);
+  scale.set_scale(calibration_factor);
+  scale.tare();
 
-  if (config.pixel_format == PIXFORMAT_JPEG) {
-    if (psramFound()) {
-      config.jpeg_quality = 10;
-      config.fb_count = 2;
-      config.grab_mode = CAMERA_GRAB_LATEST;
-    } else {
-      config.frame_size = FRAMESIZE_SVGA;
-      config.fb_location = CAMERA_FB_IN_DRAM;
-    }
-  } else {
-    config.frame_size = FRAMESIZE_240X240;
-#if CONFIG_IDF_TARGET_ESP32S3
-    config.fb_count = 2;
-#endif
-  }
+  // DHT11
+  dht.begin();
 
-#if defined(CAMERA_MODEL_ESP_EYE)
-  pinMode(13, INPUT_PULLUP);
-  pinMode(14, INPUT_PULLUP);
-#endif
+  // GPS
+  GPSSerial.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
 
-  // Camera init
-  esp_err_t err = esp_camera_init(&config);
-  if (err != ESP_OK) {
-    Serial.printf("Camera init failed with error 0x%x", err);
-    display.clearDisplay();
-    display.setCursor(0, 0);
-    display.printf("Cam Init Failed!\nErr: 0x%x", err);
-    display.display();
-    return;
-  }
+  // Timer
+  timer.setInterval(2000L, sendData);
 
-  sensor_t *s = esp_camera_sensor_get();
-  if (s->id.PID == OV3660_PID) {
-    s->set_vflip(s, 1);
-    s->set_brightness(s, 1);
-    s->set_saturation(s, -2);
-  }
-
-  if (config.pixel_format == PIXFORMAT_JPEG) {
-    s->set_framesize(s, FRAMESIZE_QVGA);
-  }
-
-#if defined(CAMERA_MODEL_M5STACK_WIDE) || defined(CAMERA_MODEL_M5STACK_ESP32CAM)
-  s->set_vflip(s, 1);
-  s->set_hmirror(s, 1);
-#endif
-
-#if defined(CAMERA_MODEL_ESP32S3_EYE)
-  s->set_vflip(s, 1);
-#endif
-
-#if defined(LED_GPIO_NUM)
-  setupLedFlash();
-#endif
-
-  // Update display with initial sensor configuration before WiFi connects
-  updateOledDisplay(s, config, false);
-
-  WiFi.begin(ssid, password);
-  WiFi.setSleep(false);
-
-  Serial.print("WiFi connecting");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("");
-  Serial.println("WiFi connected");
-
-  startCameraServer();
-
-  // Final display update with assigned IP address
-  updateOledDisplay(s, config, true);
-
-  Serial.print("Camera Ready! Use 'http://");
-  Serial.print(WiFi.localIP());
-  Serial.println("' to connect");
+  Serial.println("================================");
+  Serial.println("ESP32 Multi Sensor System Ready");
+  Serial.println("================================");
 }
 
-void loop() {
-  delay(10000);
+//================================================
+
+void loop()
+{
+  while (GPSSerial.available())
+  {
+    gps.encode(GPSSerial.read());
+  }
+
+  Blynk.run();
+  timer.run();
 }
