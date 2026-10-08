@@ -1,107 +1,222 @@
-# ESP32-CAM Web Server with OLED Display Integration
+# 📦 IoT-Based Food Condition Measuring Container
 
-A customized ESP32-CAM project that runs a web video streaming / face detection server and displays real-time camera sensor information, resolution status, frame buffer location, and network connection details on a 0.96-inch I2C SSD1306 OLED display.
-
----
-
-## 📌 Features
-
-- **Web Camera Server**: Stream video or perform face detection using standard `esp_camera` drivers.
-- **Real-Time OLED Status Display**:
-  - Sensor PID (e.g., OV2640, OV3660)
-  - Current Frame Resolution (UXGA, SVGA, QVGA, 240x240, etc.)
-  - Pixel Format (JPEG / RGB565 / RAW)
-  - Frame Buffer Location (PSRAM or internal DRAM)
-  - WiFi Connection Status & Local IP Address
-- **Dynamic Pin re-mapping for I2C**: Uses safe pins (`GPIO 15` for SDA, `GPIO 14` for SCL) to avoid interference with camera data lines.
+An ESP32-based IoT system for monitoring food storage conditions in real time. The project integrates multiple environmental sensors and uploads data to the Blynk IoT platform, allowing users to monitor food storage conditions remotely.
 
 ---
 
-## 🛠️ Hardware Requirements
+## 🚀 Features
 
-| Hardware Component | Details |
-| :--- | :--- |
-| **ESP32-CAM Board** | AI-Thinker, ESP-EYE, or ESP32-S3 Eye |
-| **OLED Display** | 0.96-inch SSD1306 (128x64 resolution, I2C interface) |
-| **FTDI Programmer** | Required for uploading code to standard ESP32-CAM |
-| **Jumper Wires** | Female-to-Female connectors |
-
----
-
-## 🔌 Hardware Connections (ESP32-CAM to OLED)
-
-> ⚠️ **Important:** Connect the OLED to the following pins to avoid conflicts with camera data lines.
-
-| OLED Display Pin | ESP32-CAM Pin | Notes |
-| :--- | :--- | :--- |
-| **VCC** | **3.3V** or **5V** | Check display voltage tolerance |
-| **GND** | **GND** | Ground connection |
-| **SDA** | **GPIO 15** | I2C Data Line |
-| **SCL** | **GPIO 14** | I2C Clock Line |
-
-*Note: Disconnect or avoid pulling GPIO 15 low during boot/flashing if it interferes with board strapping states.*
+- 🌡️ Temperature Monitoring (BMP280 & DHT11)
+- 💧 Humidity Monitoring
+- 📊 Atmospheric Pressure Monitoring
+- ⚖️ Weight Measurement using HX711 Load Cell
+- 🌫️ Gas Detection using MQ135
+- 📍 GPS Location Tracking
+- ☁️ Real-time Monitoring with Blynk IoT
+- 📱 Mobile Dashboard Support
 
 ---
 
-## 💻 Software & Library Requirements
+## 🛠 Hardware Used
 
-1. **Arduino IDE** (v1.8.x or v2.x) with **ESP32 Board Support** installed.
-2. Libraries (Install via **Tools > Manage Libraries** in Arduino IDE):
-   - **Adafruit SSD1306** (by Adafruit)
-   - **Adafruit GFX Library** (by Adafruit)
-   - **Wire** (Built-in C++ library for I2C)
-   - **WiFi** & **esp_camera** (Included in ESP32 board package)
-
----
-
-## 🚀 Setup & Flashing Instructions
-
-1. **Open Project**: Load the `.ino` sketch into Arduino IDE.
-2. **Select Board**:
-   - Go to `Tools > Board > ESP32 Arduino` and select **AI Thinker ESP32-CAM** (or your specific camera model).
-3. **Configure Board**:
-   - Ensure PSRAM is enabled if available (`Tools > PSRAM > Enabled`).
-4. **Update WiFi Credentials**:
-   ```cpp
-   const char *ssid = "YOUR_WIFI_SSID";
-   const char *password = "YOUR_WIFI_PASSWORD";
-   ```
-5. **Set Board Configuration**:
-   - Make sure your camera model definition is correctly selected in `board_config.h` (e.g., `#define CAMERA_MODEL_AI_THINKER`).
-6. **Upload**:
-   - Connect GPIO 0 to GND for programming mode.
-   - Click **Upload**.
-   - After flashing, disconnect GPIO 0 from GND and press the Reset button.
+| Component | Description |
+|------------|-------------|
+| ESP32 Dev Board | Main Controller |
+| MQ135 | Air Quality / Gas Sensor |
+| HX711 Amplifier | Load Cell Interface |
+| Load Cell | Weight Measurement |
+| BMP280 | Temperature & Pressure Sensor |
+| DHT11 | Temperature & Humidity Sensor |
+| NEO-6M GPS Module | GPS Tracking |
+| Food Storage Container | Prototype Enclosure |
 
 ---
 
-## 🖥️ OLED Screen Output Overview
+## 📡 Sensor Data
 
-When running, the screen will display:
+The system measures:
 
-```text
---- CAM & SENSOR ---
-PID: 0x2642
-Res: 240x240
-Format: RGB565
-FB Loc: PSRAM
---------------------
-IP: 192.168.1.50
+- Gas Concentration
+- Weight
+- Temperature (BMP280)
+- Atmospheric Pressure
+- Temperature (DHT11)
+- Humidity
+- GPS Latitude
+- GPS Longitude
+- GPS Speed
+- GPS Altitude
+- Satellite Count
+
+---
+
+## 📱 Blynk Virtual Pins
+
+| Virtual Pin | Data |
+|--------------|------|
+| V0 | MQ135 Gas Value |
+| V1 | Weight |
+| V2 | BMP280 Temperature |
+| V3 | Pressure |
+| V4 | DHT11 Temperature |
+| V5 | Humidity |
+| V6 | Latitude |
+| V7 | Longitude |
+| V8 | Speed |
+| V9 | Altitude |
+| V10 | Satellite Count |
+
+---
+
+## 🔌 Wiring
+
+### MQ135
+| MQ135 | ESP32 |
+|--------|-------|
+| AO | GPIO35 |
+| VCC | 5V |
+| GND | GND |
+
+### HX711
+| HX711 | ESP32 |
+|--------|-------|
+| DT | GPIO18 |
+| SCK | GPIO19 |
+| VCC | 5V |
+| GND | GND |
+
+### DHT11
+| DHT11 | ESP32 |
+|--------|-------|
+| DATA | GPIO4 |
+| VCC | 3.3V |
+| GND | GND |
+
+### BMP280 (I2C)
+| BMP280 | ESP32 |
+|---------|-------|
+| SDA | GPIO21 |
+| SCL | GPIO22 |
+| VCC | 3.3V |
+| GND | GND |
+
+### GPS Module
+| GPS | ESP32 |
+|-----|-------|
+| TX | GPIO16 |
+| RX | GPIO17 |
+| VCC | 5V |
+| GND | GND |
+
+---
+
+## 📚 Required Libraries
+
+Install the following libraries using the Arduino Library Manager.
+
+- Blynk
+- Adafruit BMP280
+- Adafruit Unified Sensor
+- HX711
+- DHT Sensor Library
+- TinyGPS++
+- Wire
+
+---
+
+## ⚙️ Configuration
+
+Update your WiFi credentials.
+
+```cpp
+char ssid[] = "YOUR_WIFI_NAME";
+char pass[] = "YOUR_WIFI_PASSWORD";
+```
+
+Update your Blynk credentials.
+
+```cpp
+#define BLYNK_TEMPLATE_ID "YOUR_TEMPLATE_ID"
+#define BLYNK_TEMPLATE_NAME "YOUR_TEMPLATE_NAME"
+#define BLYNK_AUTH_TOKEN "YOUR_AUTH_TOKEN"
 ```
 
 ---
 
-## 🔍 Troubleshooting
+## 📈 Dashboard
 
-- **OLED Allocation Failed**:
-  - Check I2C address (default is `0x3C`; if unresponsive, try changing to `0x3D` in code).
-  - Verify physical connections on `GPIO 15` (SDA) and `GPIO 14` (SCL).
-- **Camera Init Failed**:
-  - Ensure external 5V power supply provides sufficient current (at least 1A).
-  - Confirm ribbon cable from camera module is firmly seated.
+The Blynk dashboard displays:
+
+- Gas Sensor Reading
+- Weight
+- Temperature
+- Humidity
+- Pressure
+- GPS Location
+- Speed
+- Altitude
+- Satellite Status
 
 ---
 
-## 📄 License
+## 📷 Prototype
 
-This project is open-source under the MIT License.
+> Add images of the completed hardware here.
+
+Example:
+
+```
+images/prototype.jpg
+images/dashboard.jpg
+images/circuit.jpg
+```
+
+---
+
+## 🧠 Future Improvements
+
+- Food freshness prediction using Machine Learning
+- Cloud database integration
+- Mobile notifications
+- OLED display
+- SD card data logging
+- Battery backup
+- CO₂ and VOC concentration estimation
+- AI-based food spoilage detection
+
+---
+
+## 📂 Project Structure
+
+```
+Food-Condition-Measuring-Container/
+│
+├── Food_Condition_Container.ino
+├── README.md
+├── images/
+│   ├── prototype.jpg
+│   ├── dashboard.jpg
+│   └── circuit.jpg
+└── docs/
+```
+
+---
+
+## 👨‍💻 Author
+
+**Dilitha Rajapaksha**
+
+IT Undergraduate | University of Moratuwa
+
+- Robotics & IoT Enthusiast
+- Embedded Systems Developer
+- AI Enthusiast
+
+GitHub:
+https://github.com/dilithark
+
+---
+
+## ⭐ Support
+
+If you found this project helpful, consider giving it a ⭐ on GitHub.
